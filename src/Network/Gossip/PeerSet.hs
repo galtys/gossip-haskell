@@ -1,4 +1,4 @@
-module PeerSet where
+module Network.Gossip.PeerSet where
 
 import           Prelude
 
@@ -9,8 +9,8 @@ import           Control.Monad
 import           Data.List                   ((\\))
 import qualified Data.Map.Strict             as Map
 
-import           Helpers
 import           Network.Abstract.Types
+import           Network.Gossip.Helpers
 
 pingDelay :: Int -- Seconds
 pingDelay = 5

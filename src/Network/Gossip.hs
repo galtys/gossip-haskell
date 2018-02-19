@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 
-module Gossip where
+module Network.Gossip where
 
 import           Prelude
 
@@ -9,20 +9,22 @@ import           Control.Monad
 import           Control.Monad.State.Strict
 
 import           Control.Concurrent.Chan.Unagi
-import           Control.Concurrent.STM        (atomically)
+import qualified Control.Concurrent.Chan.Unagi.NoBlocking as UN
+import           Control.Concurrent.STM                   (atomically)
 import           Control.Concurrent.STM.TVar
 
-import qualified Data.ByteString               as B
-import qualified Data.ByteString.Char8         as C
-import qualified Data.HashSet                  as S
+import qualified Data.ByteString                          as B
+import qualified Data.ByteString.Char8                    as C
+import qualified Data.HashSet                             as S
 import           Data.Serialize
 
-import           GHC.Generics                  (Generic)
+import           GHC.Generics                             (Generic)
 
-import           Context
-import           Helpers
+import           Network.Gossip.Context
+import           Network.Gossip.Helpers
+import           Network.Gossip.PeerSet
+
 import           Network.Abstract.Types
-import           PeerSet
 
 data Msg = BytesMsg { bytes :: B.ByteString } |
            PingMsg |
@@ -35,7 +37,7 @@ createGossiper :: UserNetContext IO -> [NetAddr] -> String -> IO GossipContext
 createGossiper unc peers name_ = do
   ps_ <- newPeerSet peers -- Runs thread as well.
   smgss <- newTVarIO S.empty
-  (i, o) <- newChan
+  (i, o) <- UN.newChan
   let gc = GossipContext { peers = ps_
                          , sentMsgs = smgss
                          , network = unc
@@ -73,14 +75,11 @@ isItHandled sent msgSign =
       return False
 
 -- | doGossip gossips the given bytes to all neighboring peers.
-doGossip :: GossipContext -> Msg -> IO ()
-doGossip c d = do
+doGossip :: GossipContext -> B.ByteString -> IO ()
+doGossip c b = do
   sendto <- getPeersIO (peers c)
-  _ <- isItHandled (sentMsgs c) (customHash d)
-  sendGossipTo c d sendto
-
-recvGossip :: GossipContext -> IO B.ByteString
-recvGossip c = readChan (gossipChan c)
+  _ <- isItHandled (sentMsgs c) (customHash b)
+  sendGossipTo c (BytesMsg b) sendto
 
 -- | forwardGossip forwards the given bytes to peers (except the sender of the bytes).
 forwardGossip :: GossipContext -> Msg -> NetAddr -> IO ()
@@ -107,7 +106,7 @@ recvGossipInternal c d sender = do
     _ <- runThread $ forwardGossip c d sender
     _ <- addPeers (peers c) [sender]
     _ <- case d of
-           BytesMsg b -> writeChan (gossipAddChan c) b
+           BytesMsg b -> UN.writeChan (gossipAddChan c) b
            _          -> return ()
     return ()
 

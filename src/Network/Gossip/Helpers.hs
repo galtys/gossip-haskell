@@ -1,4 +1,4 @@
-module Helpers where
+module Network.Gossip.Helpers where
 
 import qualified Control.Concurrent.Thread as Thread
 import           Crypto.Hash
