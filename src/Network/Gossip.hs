@@ -9,16 +9,15 @@ import           Control.Monad
 import           Control.Monad.State.Strict
 
 import           Control.Concurrent.Chan.Unagi
-import qualified Control.Concurrent.Chan.Unagi.NoBlocking as UN
-import           Control.Concurrent.STM                   (atomically)
+import           Control.Concurrent.STM        (atomically)
 import           Control.Concurrent.STM.TVar
 
-import qualified Data.ByteString                          as B
-import qualified Data.ByteString.Char8                    as C
-import qualified Data.HashSet                             as S
+import qualified Data.ByteString               as B
+import qualified Data.ByteString.Char8         as C
+import qualified Data.HashSet                  as S
 import           Data.Serialize
 
-import           GHC.Generics                             (Generic)
+import           GHC.Generics                  (Generic)
 
 import           Network.Gossip.Context
 import           Network.Gossip.Helpers
@@ -33,20 +32,24 @@ data Msg = BytesMsg { bytes :: B.ByteString } |
            DiscoverReplyMsg { newpeers :: [NetAddr] }
          deriving (Show, Read, Generic, Serialize)
 
-createGossiper :: UserNetContext IO -> [NetAddr] -> String -> IO GossipContext
-createGossiper unc peers name_ = do
+createGossiper :: UserNetContext IO -> [NetAddr] -> String -> (B.ByteString -> IO ()) ->
+                  IO GossipContext
+createGossiper unc peers name_ dest = do
   ps_ <- newPeerSet peers -- Runs thread as well.
   smgss <- newTVarIO S.empty
-  (i, o) <- UN.newChan
   let gc = GossipContext { peers = ps_
                          , sentMsgs = smgss
                          , network = unc
                          , name = name_
-                         , gossipChan = o
-                         , gossipAddChan = i
+                         , destination = dest
                          }
   _ <- runThread $ gossipListener gc
   return gc
+
+runGossiper :: GossipContext -> IO ()
+runGossiper gc = do
+  _ <- runThread $ gossipListener gc
+  return ()
 
 gossipListener :: GossipContext -> IO ()
 gossipListener gc = do
@@ -103,10 +106,10 @@ recvGossipInternal :: GossipContext -> Msg -> NetAddr -> IO ()
 recvGossipInternal c d sender = do
   handled <- isItHandled (sentMsgs c) (customHash d)
   unless handled $ do
-    _ <- runThread $ forwardGossip c d sender
-    _ <- addPeers (peers c) [sender]
-    _ <- case d of
-           BytesMsg b -> UN.writeChan (gossipAddChan c) b
+    runThread $ forwardGossip c d sender
+    addPeers (peers c) [sender]
+    case d of
+           BytesMsg b -> (destination c) b
            _          -> return ()
     return ()
 
