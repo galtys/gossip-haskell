@@ -39,7 +39,6 @@ getPeersIO :: PeerSet -> IO [NetAddr]
 getPeersIO (PeerSet ps) = Map.keys <$> readTVarIO ps
 
 -- | cleanPeers periodically clears all processes which have not responded in a while.
---   It prints to STDOUT whenever peers are purged.
 cleanPeers :: PeerSet -> IO ()
 cleanPeers peerSet@(PeerSet ps) = do
   _ <- threadDelay $ 6000000 * purgeDelay -- Every 1 minute.
@@ -48,7 +47,7 @@ cleanPeers peerSet@(PeerSet ps) = do
   atomically $ modifyTVar ps $ Map.filter (\lastAlive -> purgeDelay + lastAlive < now)
   newPeers <- getPeersIO peerSet
   let diff = length $ origPeers \\ newPeers
-  _ <- when (diff /= 0) $ putStrLn $ show diff ++ " peer(s) purged."
+  -- _ <- when (diff /= 0) $ putStrLn $ show diff ++ " peer(s) purged."
   cleanPeers peerSet
 
 addPeers :: PeerSet -> [NetAddr] -> IO ()

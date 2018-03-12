@@ -100,8 +100,6 @@ sendGossipTo c d addrs = do
 
 -- | recvGossipInternal is invoked when some gossip is received on the network. It forwards
 --   the gossip to neighbors after processing it.
---   TODO: This is inefficient. Shouldn't forward BlockMsgs with priority lower than
---   any other already forwarded.
 recvGossipInternal :: GossipContext -> Msg -> NetAddr -> IO ()
 recvGossipInternal c d sender = do
   handled <- isItHandled (sentMsgs c) (customHash d)
