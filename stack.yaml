@@ -2,10 +2,9 @@ resolver: lts-10.5
 
 packages:
 - .
+- ../abstract-network
 
-extra-deps:
-- git: https://github.com/sakshamsharma/abstract-network
-  commit: f151d5cfa7e46eacd371078a740a3be8329f5605
+extra-deps: []
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

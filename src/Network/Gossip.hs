@@ -3,27 +3,20 @@
 
 module Network.Gossip where
 
-import           Prelude
-
+import           Control.Concurrent.STM      (atomically)
+import           Control.Concurrent.STM.TVar
 import           Control.Monad
 import           Control.Monad.State.Strict
-
-import           Control.Concurrent.Chan.Unagi
-import           Control.Concurrent.STM        (atomically)
-import           Control.Concurrent.STM.TVar
-
-import qualified Data.ByteString               as B
-import qualified Data.ByteString.Char8         as C
-import qualified Data.HashSet                  as S
+import qualified Data.ByteString             as B
+import qualified Data.ByteString.Char8       as C
+import qualified Data.HashSet                as S
 import           Data.Serialize
-
-import           GHC.Generics                  (Generic)
-
+import           GHC.Generics                (Generic)
+import           Network.Abstract.Types
 import           Network.Gossip.Context
 import           Network.Gossip.Helpers
 import           Network.Gossip.PeerSet
-
-import           Network.Abstract.Types
+import           Prelude
 
 data Msg = BytesMsg { bytes :: B.ByteString } |
            PingMsg |
@@ -32,36 +25,10 @@ data Msg = BytesMsg { bytes :: B.ByteString } |
            DiscoverReplyMsg { newpeers :: [NetAddr] }
          deriving (Show, Read, Generic, Serialize)
 
-createGossiper :: UserNetContext IO -> [NetAddr] -> String -> (B.ByteString -> IO ()) ->
-                  IO GossipContext
-createGossiper unc peers name_ dest = do
-  ps_ <- newPeerSet peers -- Runs thread as well.
-  smgss <- newTVarIO S.empty
-  let gc = GossipContext { peers = ps_
-                         , sentMsgs = smgss
-                         , network = unc
-                         , name = name_
-                         , destination = dest
-                         }
-  _ <- runThread $ gossipListener gc
-  return gc
-
-runGossiper :: GossipContext -> IO ()
-runGossiper gc = do
-  _ <- runThread $ gossipListener gc
-  return ()
-
-gossipListener :: GossipContext -> IO ()
-gossipListener gc = do
-  let q = msgQueue (network gc)
-  (from, msg_) <- readChan q
-  let msg = read $ C.unpack msg_
-  gossipReceiver gc msg from
-  gossipListener gc
-
-gossipReceiver :: GossipContext -> Msg -> NetAddr -> IO ()
-gossipReceiver c m frm =
-  case m of
+gossipReceiver :: GossipContext -> B.ByteString -> NetAddr -> IO ()
+gossipReceiver c msg frm =
+  let m = read $ C.unpack msg
+  in case m of
     BytesMsg _         -> recvGossipInternal c m frm
     PingMsg            -> recvPing c frm
     PingReplyMsg       -> recvPingReply c frm
@@ -95,7 +62,7 @@ forwardGossip c d sender = do
 sendGossipTo :: GossipContext -> Msg -> [NetAddr] -> IO ()
 sendGossipTo c d addrs = do
   let bytes = C.pack $ show d
-  _ <- mapM (\addr -> sendMsg (network c) addr bytes) addrs
+  mapM_ (\addr -> sendMsg (network c) addr bytes) addrs
   return ()
 
 -- | recvGossipInternal is invoked when some gossip is received on the network. It forwards
@@ -107,7 +74,7 @@ recvGossipInternal c d sender = do
     runThread $ forwardGossip c d sender
     addPeers (peers c) [sender]
     case d of
-           BytesMsg b -> (destination c) b
+           BytesMsg b -> destination c b
            _          -> return ()
     return ()
 
@@ -130,4 +97,4 @@ recvDisc c sender = do
 
 recvDiscReply :: GossipContext -> [NetAddr] -> NetAddr -> IO ()
 recvDiscReply c npeers _ =
-  mapM_ (\peer -> markPeerAlive (peers c) peer) npeers
+  mapM_ (markPeerAlive (peers c)) npeers
