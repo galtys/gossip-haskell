@@ -10,7 +10,8 @@ import           Network.Gossip.PeerSet
 
 data GossipContext = GossipContext { peers         :: PeerSet
                                    , sentMsgs      :: TVar (S.HashSet B.ByteString)
-                                   , network       :: UserNetContext
+                                   , sendGossip    :: NetAddr -> B.ByteString -> IO ()
+                                   , askPeer       :: NetAddr -> B.ByteString -> IO B.ByteString
                                    , name          :: String
-                                   , destination   :: B.ByteString -> IO ()
+                                   , recvGossip    :: B.ByteString -> IO ()
                                    }

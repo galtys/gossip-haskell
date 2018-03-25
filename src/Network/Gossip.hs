@@ -12,28 +12,27 @@ import qualified Data.ByteString.Char8       as C
 import qualified Data.HashSet                as S
 import           Data.Serialize
 import           GHC.Generics                (Generic)
-import           Network.Abstract.Types
+import           Network.Abstract.Types      (NetAddr)
 import           Network.Gossip.Context
 import           Network.Gossip.Helpers
 import           Network.Gossip.PeerSet
 import           Prelude
+import           Text.Read
 
 data Msg = BytesMsg { bytes :: B.ByteString } |
            PingMsg |
            PingReplyMsg |
-           DiscoverMsg |
-           DiscoverReplyMsg { newpeers :: [NetAddr] }
+           DiscoverMsg
          deriving (Show, Read, Generic, Serialize)
 
-gossipReceiver :: GossipContext -> B.ByteString -> NetAddr -> IO ()
+gossipReceiver :: GossipContext -> B.ByteString -> NetAddr -> IO B.ByteString
 gossipReceiver c msg frm =
   let m = read $ C.unpack msg
   in case m of
-    BytesMsg _         -> recvGossipInternal c m frm
-    PingMsg            -> recvPing c frm
-    PingReplyMsg       -> recvPingReply c frm
-    DiscoverMsg        -> recvDisc c frm
-    DiscoverReplyMsg x -> recvDiscReply c x frm
+    BytesMsg _   -> recvGossipInternal c m frm >> return B.empty
+    PingMsg      -> recvPing c frm >> return B.empty
+    PingReplyMsg -> recvPingReply c frm >> return B.empty
+    DiscoverMsg  -> recvDisc c frm
 
 isItHandled :: TVar (S.HashSet B.ByteString) -> B.ByteString -> IO Bool
 isItHandled sent msgSign =
@@ -51,6 +50,19 @@ doGossip c b = do
   _ <- isItHandled (sentMsgs c) (customHash b)
   sendGossipTo c (BytesMsg b) sendto
 
+discoverNodes :: GossipContext -> IO ()
+discoverNodes c = do
+  let bytes = C.pack . show $ DiscoverMsg
+  peers <- getPeersIO (peers c)
+  responses <- mapM (\addr -> askPeer c addr bytes) peers
+  mapM_ (updatePeers . C.unpack) responses
+    where updatePeers resp =
+            case readEither resp :: Either String [NetAddr] of
+              Left err -> putStrLn "Invalid response for new nodes query"
+              Right npeers -> do
+                putStrLn $ "Informed about nodes " ++ show npeers
+                mapM_ (markPeerAlive (peers c)) npeers
+
 -- | forwardGossip forwards the given bytes to peers (except the sender of the bytes).
 forwardGossip :: GossipContext -> Msg -> NetAddr -> IO ()
 forwardGossip c d sender = do
@@ -62,7 +74,7 @@ forwardGossip c d sender = do
 sendGossipTo :: GossipContext -> Msg -> [NetAddr] -> IO ()
 sendGossipTo c d addrs = do
   let bytes = C.pack $ show d
-  mapM_ (\addr -> sendMsg (network c) addr bytes) addrs
+  mapM_ (\addr -> sendGossip c addr bytes) addrs
   return ()
 
 -- | recvGossipInternal is invoked when some gossip is received on the network. It forwards
@@ -74,7 +86,7 @@ recvGossipInternal c d sender = do
     runThread $ forwardGossip c d sender
     addPeers (peers c) [sender]
     case d of
-           BytesMsg b -> destination c b
+           BytesMsg b -> recvGossip c b
            _          -> return ()
     return ()
 
@@ -82,19 +94,14 @@ recvPing :: GossipContext -> NetAddr -> IO ()
 recvPing c sender = do
   _ <- markPeerAlive (peers c) sender
   let bytes = C.pack $ show PingReplyMsg
-  sendMsg (network c) sender bytes
+  sendGossip c sender bytes
 
 recvPingReply :: GossipContext -> NetAddr -> IO ()
 recvPingReply c sender = liftIO $ markPeerAlive (peers c) sender
 
-recvDisc :: GossipContext -> NetAddr -> IO ()
+recvDisc :: GossipContext -> NetAddr -> IO B.ByteString
 recvDisc c sender = do
   _ <- markPeerAlive (peers c) sender
   ps <- getPeersIO (peers c)
   let filteredPeers = filter (/= sender) ps
-  let bytes = C.pack $ show (DiscoverReplyMsg [])
-  sendMsg (network c) sender bytes
-
-recvDiscReply :: GossipContext -> [NetAddr] -> NetAddr -> IO ()
-recvDiscReply c npeers _ =
-  mapM_ (markPeerAlive (peers c)) npeers
+  return . C.pack . show $ filteredPeers

@@ -33,7 +33,10 @@ newPeerSet ps = do
 markPeerAlive :: PeerSet -> NetAddr -> IO ()
 markPeerAlive (PeerSet ps) addr = do
   now <- curTime
+  initSize <- Map.size <$> readTVarIO ps
   atomically $ modifyTVar ps $ addToMapIfPossible addr now
+  finalSize <- Map.size <$> readTVarIO ps
+  when (initSize /= finalSize) $ putStrLn $ "Possibly added node " ++ show addr
 
 getPeersIO :: PeerSet -> IO [NetAddr]
 getPeersIO (PeerSet ps) = Map.keys <$> readTVarIO ps
