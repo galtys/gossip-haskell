@@ -52,13 +52,13 @@ doGossip c b = do
 
 discoverNodes :: GossipContext -> IO ()
 discoverNodes c = do
-  let bytes = C.pack . show $ DiscoverMsg
-  peers <- getPeersIO (peers c)
-  responses <- mapM (\addr -> askPeer c addr bytes) peers
+  let bmsg = C.pack . show $ DiscoverMsg
+  prs <- getPeersIO (peers c)
+  responses <- mapM (\addr -> askPeer c addr bmsg) prs
   mapM_ (updatePeers . C.unpack) responses
     where updatePeers resp =
             case readEither resp :: Either String [NetAddr] of
-              Left err -> putStrLn "Invalid response for new nodes query"
+              Left _ -> putStrLn "Invalid response for new nodes query"
               Right npeers -> do
                 putStrLn $ "Informed about nodes " ++ show npeers
                 mapM_ (markPeerAlive (peers c)) npeers
@@ -73,8 +73,8 @@ forwardGossip c d sender = do
 -- | sendGossipTo sends the given bytes to the provided addresses.
 sendGossipTo :: GossipContext -> Msg -> [NetAddr] -> IO ()
 sendGossipTo c d addrs = do
-  let bytes = C.pack $ show d
-  mapM_ (\addr -> sendGossip c addr bytes) addrs
+  let bmsg = C.pack $ show d
+  mapM_ (\addr -> sendGossip c addr bmsg) addrs
   return ()
 
 -- | recvGossipInternal is invoked when some gossip is received on the network. It forwards
@@ -93,8 +93,8 @@ recvGossipInternal c d sender = do
 recvPing :: GossipContext -> NetAddr -> IO ()
 recvPing c sender = do
   _ <- markPeerAlive (peers c) sender
-  let bytes = C.pack $ show PingReplyMsg
-  sendGossip c sender bytes
+  let bmsg = C.pack $ show PingReplyMsg
+  sendGossip c sender bmsg
 
 recvPingReply :: GossipContext -> NetAddr -> IO ()
 recvPingReply c sender = liftIO $ markPeerAlive (peers c) sender

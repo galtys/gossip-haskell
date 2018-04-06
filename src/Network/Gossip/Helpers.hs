@@ -12,6 +12,7 @@ curTime = round `fmap` getPOSIXTime
 customHash :: Show a => a -> B.ByteString
 customHash x = C.pack $ show ((hash $ C.pack $ show x) :: Digest SHA3_512)
 
+runThread :: IO () -> IO ()
 runThread action = do
-  (_, w) <- Thread.forkIO action
-  return w
+  (_, _) <- Thread.forkIO action
+  return ()

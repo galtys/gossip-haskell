@@ -6,7 +6,6 @@ import           Control.Concurrent          (threadDelay)
 import           Control.Concurrent.STM      (atomically)
 import           Control.Concurrent.STM.TVar
 import           Control.Monad
-import           Data.List                   ((\\))
 import qualified Data.Map.Strict             as Map
 
 import           Network.Abstract.Types
@@ -27,7 +26,7 @@ newPeerSet :: [NetAddr] -> IO PeerSet
 newPeerSet ps = do
   v <- newTVarIO $ Map.fromList (zip ps (repeat 0))
   let res = PeerSet v
-  _ <- runThread $ cleanPeers res -- TODO: Ignoring the threadID.
+  runThread $ cleanPeers res
   return res
 
 markPeerAlive :: PeerSet -> NetAddr -> IO ()
@@ -46,10 +45,10 @@ cleanPeers :: PeerSet -> IO ()
 cleanPeers peerSet@(PeerSet ps) = do
   _ <- threadDelay $ 6000000 * purgeDelay -- Every 1 minute.
   now <- curTime :: IO Int
-  origPeers <- getPeersIO peerSet
+  -- origPeers <- getPeersIO peerSet
   atomically $ modifyTVar ps $ Map.filter (\lastAlive -> purgeDelay + lastAlive < now)
-  newPeers <- getPeersIO peerSet
-  let diff = length $ origPeers \\ newPeers
+  -- newPeers <- getPeersIO peerSet
+  -- let diff = length $ origPeers \\ newPeers
   -- _ <- when (diff /= 0) $ putStrLn $ show diff ++ " peer(s) purged."
   cleanPeers peerSet
 
