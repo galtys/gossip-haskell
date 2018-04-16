@@ -1,7 +1,12 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 
-module Network.Gossip where
+module Network.Gossip ( sayHiToAll
+                      , gossipReceiver
+                      , doGossip
+                      , discoverNodes
+                      , Network.Gossip.PeerSet.getPeersIO
+                      ) where
 
 import           Control.Concurrent.STM      (atomically)
 import           Control.Concurrent.STM.TVar
@@ -25,6 +30,12 @@ data Msg = BytesMsg { bytes :: B.ByteString } |
            DiscoverMsg
          deriving (Show, Read, Generic, Serialize)
 
+sayHiToAll :: GossipContext -> IO ()
+sayHiToAll c = do
+  let d = PingMsg
+  sendto <- getPeersIO (peers c)
+  sendGossipTo c d sendto
+
 gossipReceiver :: GossipContext -> B.ByteString -> NetAddr -> IO B.ByteString
 gossipReceiver c msg frm =
   let m = read $ C.unpack msg
@@ -47,8 +58,9 @@ isItHandled sent msgSign =
 doGossip :: GossipContext -> B.ByteString -> IO ()
 doGossip c b = do
   sendto <- getPeersIO (peers c)
-  _ <- isItHandled (sentMsgs c) (customHash b)
-  sendGossipTo c (BytesMsg b) sendto
+  let msg = BytesMsg b
+  _ <- isItHandled (sentMsgs c) (msgHash msg)
+  sendGossipTo c msg sendto
 
 discoverNodes :: GossipContext -> IO ()
 discoverNodes c = do
@@ -70,18 +82,21 @@ forwardGossip c d sender = do
   sendto <- filter (/= sender) <$> getPeersIO (peers c)
   sendGossipTo c d sendto
 
--- | sendGossipTo sends the given bytes to the provided addresses.
+-- | sendGossipTo sends the given message to the provided addresses.
 sendGossipTo :: GossipContext -> Msg -> [NetAddr] -> IO ()
-sendGossipTo c d addrs = do
+sendGossipTo c d = mapM_ $ sendMsgInternal c d
+
+-- | sendMsgInternal sends given message to the provided address.
+sendMsgInternal :: GossipContext -> Msg -> NetAddr -> IO ()
+sendMsgInternal c d addr =
   let bmsg = C.pack $ show d
-  mapM_ (\addr -> sendGossip c addr bmsg) addrs
-  return ()
+  in sendGossip c addr bmsg
 
 -- | recvGossipInternal is invoked when some gossip is received on the network. It forwards
 --   the gossip to neighbors after processing it.
 recvGossipInternal :: GossipContext -> Msg -> NetAddr -> IO ()
 recvGossipInternal c d sender = do
-  handled <- isItHandled (sentMsgs c) (customHash d)
+  handled <- isItHandled (sentMsgs c) (msgHash d)
   unless handled $ do
     runThread $ forwardGossip c d sender
     addPeers (peers c) [sender]
@@ -93,8 +108,7 @@ recvGossipInternal c d sender = do
 recvPing :: GossipContext -> NetAddr -> IO ()
 recvPing c sender = do
   _ <- markPeerAlive (peers c) sender
-  let bmsg = C.pack $ show PingReplyMsg
-  sendGossip c sender bmsg
+  sendMsgInternal c PingReplyMsg sender
 
 recvPingReply :: GossipContext -> NetAddr -> IO ()
 recvPingReply c sender = liftIO $ markPeerAlive (peers c) sender
@@ -105,3 +119,6 @@ recvDisc c sender = do
   ps <- getPeersIO (peers c)
   let filteredPeers = filter (/= sender) ps
   return . C.pack . show $ filteredPeers
+
+msgHash :: Msg -> B.ByteString
+msgHash x = C.pack $ show ((hash $ C.pack $ show x) :: Digest SHA3_512)

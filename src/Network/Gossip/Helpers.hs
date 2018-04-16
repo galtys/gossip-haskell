@@ -1,4 +1,7 @@
-module Network.Gossip.Helpers where
+module Network.Gossip.Helpers ( module Crypto.Hash
+                              , curTime
+                              , runThread
+                              ) where
 
 import qualified Control.Concurrent.Thread as Thread
 import           Crypto.Hash
@@ -8,9 +11,6 @@ import           Data.Time.Clock.POSIX     (getPOSIXTime)
 
 curTime :: IO Int
 curTime = round `fmap` getPOSIXTime
-
-customHash :: Show a => a -> B.ByteString
-customHash x = C.pack $ show ((hash $ C.pack $ show x) :: Digest SHA3_512)
 
 runThread :: IO () -> IO ()
 runThread action = do
