@@ -70,7 +70,7 @@ discoverNodes c = do
   mapM_ (updatePeers . C.unpack) responses
     where updatePeers resp =
             case readEither resp :: Either String [NetAddr] of
-              Left _ -> putStrLn "Invalid response for new nodes query"
+              Left _ -> putStrLn $ "Invalid response for new nodes query: " ++ show resp
               Right npeers -> do
                 putStrLn $ "Informed about nodes " ++ show npeers
                 mapM_ (markPeerAlive (peers c)) npeers
